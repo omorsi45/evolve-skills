@@ -1,0 +1,15 @@
+Evolve Skills
+Copyright (c) 2026 Omar Morsi
+
+This independent implementation is inspired by:
+
+Liyan Tang, Cyrus Rashtchian, Chun-Sung Ferng, Andrew Tomkins,
+Da-Cheng Juan, and Tu Vu. "WikiSkill: Compiling Agent Experience
+into Persistent Knowledge for Skill Evolution." arXiv:2608.27454,
+2026. https://arxiv.org/abs/2608.27454
+
+The referenced paper and its displayed system prompts are available
+under the Creative Commons Attribution 4.0 International license.
+This project adapts the paper's architecture and method for colocated,
+independently installed Agent Skills. It is not affiliated with or
+endorsed by Google Research or the paper's authors.

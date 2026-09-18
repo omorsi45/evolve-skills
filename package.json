@@ -1,0 +1,17 @@
+{
+  "name": "evolve-agent-skills",
+  "version": "1.1.0",
+  "description": "WikiSkill-inspired evolution for reusable Agent Skills",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "evolve-skills": "scripts/evolve.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/evolve.test.mjs",
+    "check": "node --check scripts/evolve.mjs && node --check scripts/harnesses.mjs && node --test tests/evolve.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
