@@ -4,7 +4,7 @@
 
 `evolve-skills` is an installable Agent Skill that learns from another skill's real runs, builds a persistent knowledge base of what works and what fails, and proposes small improvements over time.
 
-Inspired by the [WikiSkill paper](https://arxiv.org/abs/2608.27454), it keeps **raw experience → persistent wiki → skill edits** separate so knowledge compounds across iterations instead of being lost.
+Inspired by the [WikiSkill paper](https://arxiv.org/abs/2608.27454) by Google, it keeps **raw experience → persistent wiki → skill edits** separate so knowledge compounds across iterations instead of being lost.
 
 ## Quick start
 
