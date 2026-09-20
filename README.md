@@ -1,25 +1,32 @@
 # Evolve Skills
 
-**Make your Agent Skills improve from experience instead of staying static.**
+**Make Agent Skills improve from real execution history.**
 
-`evolve-skills` is an installable Agent Skill that watches how another skill performs in real runs, turns repeated successes and failures into persistent knowledge, and proposes targeted improvements to that skill over time.
+`evolve-skills` is an installable Agent Skill that learns from another skill's real runs, builds a persistent knowledge base of what works and what fails, and proposes small improvements over time.
 
-It is inspired by the **WikiSkill** research architecture: keep raw execution experience, a persistent wiki of learned patterns, and the live skill separate so knowledge can compound across iterations instead of being lost between runs.
+Inspired by the [WikiSkill paper](https://arxiv.org/abs/2608.27454), it keeps **raw experience → persistent wiki → skill edits** separate so knowledge compounds across iterations instead of being lost.
 
-> **Install it like any other skill:** clone this repository directly into your agent's skills folder. There is no package to publish or server to run.
+## Quick start
 
-## Why use it?
+**Requirements:** a filesystem-based Agent Skills setup, Node.js 20+, and access to the skill you want to improve.
 
-Most Agent Skills are written once and then remain unchanged. But after dozens of real tasks, your agent has already generated useful evidence about:
+Install it directly into your agent's skills folder:
 
-- instructions that are unclear;
-- steps that repeatedly fail;
-- workflows that consistently work;
-- model-specific workarounds;
-- missing edge cases;
-- edits that were tried before and should not be repeated.
+```bash
+git clone https://github.com/omorsi45/evolve-skills.git <skills-folder>/evolve-skills
+```
 
-`evolve-skills` turns that history into an auditable improvement loop:
+Or download the repo and copy the entire `evolve-skills` folder there. Keep `SKILL.md`, `scripts/`, and `references/` together.
+
+Then tell your agent:
+
+```text
+Use evolve-skills to evolve /path/to/my-skill.
+```
+
+That's the normal workflow — you do **not** need to operate the CLI manually.
+
+## How it works
 
 ```text
 real runs
@@ -28,14 +35,14 @@ raw traces
    ↓
 persistent wiki of patterns
    ↓
-small proposed skill edit
+small proposed SKILL.md change
    ↓
 human approval / evaluation gate
    ↓
-better SKILL.md
+improved skill
 ```
 
-The learning state stays **inside the target skill**, so each skill develops its own reusable memory:
+Each target skill keeps its own evolution state:
 
 ```text
 my-skill/
@@ -48,11 +55,34 @@ my-skill/
     RUNS.tsv
 ```
 
-## What the research found
+This lets the system remember recurring failures, successful strategies, previous proposals, and rejected ideas without bloating the live skill.
 
-This project is inspired by **WikiSkill: Compiling Agent Experience into Persistent Knowledge for Skill Evolution**.
+## Why this matters
 
-In the paper's experiments across five benchmarks and multiple model families, WikiSkill improved average Qwen performance over the no-skill baseline by:
+Static skills do not learn from use. After many real tasks, your execution history already contains evidence about unclear instructions, missing edge cases, repeated failures, useful workarounds, and workflows that consistently succeed.
+
+`evolve-skills` turns that evidence into an auditable improvement loop while keeping the live skill protected.
+
+### Core features
+
+- learns from real execution history;
+- persistent WikiSkill-style knowledge per target skill;
+- observational and benchmark-gated evolution modes;
+- one narrow, atomic skill change per proposal;
+- explicit human approval before live edits;
+- strict `score_after > score_before` gate in evaluated mode;
+- deduplicated, content-addressed trace ingestion;
+- per-agent transcript scan checkpoints;
+- persistent accepted, rejected, and `no_action` history;
+- integrity checks for traces and proposals;
+- support for 16 popular coding-agent harnesses;
+- no runtime dependencies beyond Node.js 20+.
+
+## Research results
+
+The project is inspired by **WikiSkill: Compiling Agent Experience into Persistent Knowledge for Skill Evolution**.
+
+Across five benchmarks, the paper reports average improvements over the no-skill baseline of:
 
 | Model | Average improvement |
 | --- | ---: |
@@ -60,134 +90,29 @@ In the paper's experiments across five benchmarks and multiple model families, W
 | Qwen-3.5-9B | **+17.5 points** |
 | Qwen-3.6-27B | **+23.9 points** |
 
-On individual tasks, the gains could be substantially larger. For example, Qwen-3.6-27B improved by **+40.9 points** on the spreadsheet benchmark. The paper also found that evolved skills can transfer across models and that persistent wiki knowledge is important to effective skill evolution.
+On the spreadsheet benchmark, Qwen-3.6-27B improved by **+40.9 points**. The paper also reports cross-model transfer and shows that persistent wiki knowledge is important to effective skill evolution.
 
-Paper: https://arxiv.org/abs/2608.27454
+> These are **WikiSkill paper results**, not benchmark claims for this repository. `evolve-skills` is an independent implementation inspired by the paper's persistent raw → wiki → skill architecture.
 
-**Important:** those numbers are results from the WikiSkill paper, not benchmark claims for this repository. `evolve-skills` is an independent implementation inspired by its persistent raw → wiki → skill architecture.
+[Read the paper →](https://arxiv.org/abs/2608.27454)
 
-## Install in seconds
+## Two modes
 
-Requirements:
+| Mode | Use it when | Behavior |
+| --- | --- | --- |
+| **Observational** | You want to learn from normal real-world runs | Finds recurring patterns and proposes evidence-based improvements for review |
+| **Evaluated** | You have a repeatable benchmark or validation set | Applies a proposal only when `score_after > score_before` |
 
-- an agent that supports filesystem-based Agent Skills;
-- Node.js 20+;
-- filesystem access to the skill you want to improve.
-
-### Option 1 — clone directly into your skills folder
-
-Replace `<skills-folder>` with the directory your agent uses for skills:
-
-```bash
-git clone https://github.com/omorsi45/evolve-skills.git <skills-folder>/evolve-skills
-```
-
-That's it. Keep the repository as one folder named `evolve-skills` inside your skills directory.
-
-You should end up with:
-
-```text
-<skills-folder>/
-  evolve-skills/
-    SKILL.md
-    scripts/
-    references/
-```
-
-### Option 2 — download and copy
-
-Download this repository and copy the entire `evolve-skills` directory into your agent's skills folder.
-
-Do **not** copy only `SKILL.md`; keep `SKILL.md`, `scripts/`, and `references/` together.
-
-## Use it
-
-Once installed, just tell your agent which skill you want to improve:
-
-```text
-Use evolve-skills to evolve /path/to/my-skill.
-```
-
-Or explicitly choose a mode:
-
-```text
-Use evolve-skills to evolve /path/to/my-skill in observational mode.
-```
-
-The agent reads `SKILL.md` and uses the bundled CLI to manage the evolution state safely.
-
-You do not need to manually run the CLI for normal agent-driven use.
-
-## Two evolution modes
-
-### Observational mode
-
-Best for normal real-world usage.
-
-It learns from actual work sessions, finds recurring patterns, and proposes improvements for review.
-
-```text
-Use evolve-skills to evolve /path/to/my-skill in observational mode.
-```
-
-This mode is evidence-based, but it does not claim a measured performance improvement unless you separately evaluate the change.
-
-### Evaluated mode
-
-Best when you have a repeatable benchmark or validation set.
-
-A proposed skill change is accepted only when:
-
-```text
-score_after > score_before
-```
-
-If performance does not improve, the live skill is left unchanged while the accumulated wiki knowledge is preserved for future attempts.
-
-## What it provides
-
-- learns from real execution history;
-- persistent WikiSkill-style knowledge that compounds over time;
-- observational and benchmark-gated evolution modes;
-- small, atomic skill-edit proposals instead of uncontrolled rewrites;
-- explicit human approval before modifying the live skill;
-- strict `score_after > score_before` gating in evaluated mode;
-- rollback-safe proposal history;
-- content-addressed and deduplicated trace ingestion;
-- per-agent transcript scan checkpoints;
-- persistent records of successful and rejected ideas;
-- integrity verification for traces and proposals;
-- support for 16 popular coding-agent harnesses;
-- no runtime dependencies beyond Node.js 20+.
-
-## Why the persistent wiki matters
-
-A simple "read the last few failures and rewrite the prompt" loop forgets what happened before.
-
-`evolve-skills` instead keeps a growing knowledge layer containing recurring failure modes, successful strategies, proposal history, and skill impact.
-
-That means later improvements can build on earlier evidence instead of rediscovering the same lessons.
-
-The live skill stays concise while the detailed history remains available to the evolution process.
+If an evaluated proposal does not improve the score, the live skill stays unchanged while the accumulated wiki knowledge is preserved.
 
 ## Safety by design
 
-Skill evolution should not silently rewrite production instructions.
+The system does not silently rewrite production skills. It separates evidence collection, wiki maintenance, proposal creation, review, and application.
 
-This project therefore keeps proposal generation separate from application:
+A live `SKILL.md` change requires explicit human approval. Rejected proposals and `no_action` outcomes remain in history so the system can learn from them instead of repeatedly suggesting the same bad edit.
 
-1. collect evidence;
-2. update persistent patterns;
-3. propose one narrow change;
-4. review it;
-5. apply only with explicit approval;
-6. in evaluated mode, require a strictly better score.
-
-Rejected proposals and `no_action` outcomes are also retained so the system does not repeatedly rediscover the same bad edit.
-
-## Direct CLI use
-
-You can also operate the evolution state manually:
+<details>
+<summary><strong>Direct CLI usage</strong></summary>
 
 ```bash
 node scripts/evolve.mjs init /path/to/my-skill --mode observational
@@ -200,19 +125,16 @@ node scripts/evolve.mjs status /path/to/my-skill
 node scripts/evolve.mjs verify /path/to/my-skill
 ```
 
-Use the exact `scan_started_at` returned by `scan` as the checkpoint value, and only after every candidate for that source has been processed successfully.
+Use the exact `scan_started_at` returned by `scan` as the checkpoint, and only after every candidate for that source has been processed successfully.
 
-Machine-specific transcript paths live in the target skill's ignored `evolution/sources.local.json`. Evolution knowledge and decisions remain in the target's reusable `evolution/` tree.
+Machine-specific transcript paths live in the target skill's ignored `evolution/sources.local.json`; reusable evolution knowledge stays in its `evolution/` tree.
 
-Run:
+Run `node scripts/evolve.mjs --help` for the full command list. See `references/state-layout.md` for command forms and state layout.
 
-```bash
-node scripts/evolve.mjs --help
-```
+</details>
 
-for the full command list. See `references/state-layout.md` for command forms and state layout.
-
-## Development
+<details>
+<summary><strong>Development</strong></summary>
 
 ```bash
 node --test tests/evolve.test.mjs
@@ -220,12 +142,12 @@ node --check scripts/evolve.mjs
 node --check scripts/harnesses.mjs
 ```
 
-## Method and attribution
+</details>
 
-This is an independent implementation inspired by:
+## Method & attribution
+
+Independent implementation inspired by:
 
 Liyan Tang, Cyrus Rashtchian, Chun-Sung Ferng, Andrew Tomkins, Da-Cheng Juan, and Tu Vu. **WikiSkill: Compiling Agent Experience into Persistent Knowledge for Skill Evolution.** arXiv:2608.27454, 2026.
-
-https://arxiv.org/abs/2608.27454
 
 The paper is licensed under CC BY 4.0. This project's source code and original documentation are licensed under MIT. This project is not affiliated with or endorsed by Google Research.
