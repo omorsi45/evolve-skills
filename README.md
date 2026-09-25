@@ -1,8 +1,8 @@
 # Evolve Skills
 
-**Models finish training. Skills don't have to.**
+**Continual learning infrastructure for coding agents, without retraining the model.**
 
-Evolve Skills is an installable Agent Skill that turns real coding-agent execution history into a controlled learning loop for reusable skills.
+Turns real agent execution traces into persistent knowledge, benchmark-gated skill improvements, and human-reviewed updates.
 
 Instead of treating `SKILL.md` as static configuration, it lets a skill accumulate evidence from real runs, compile recurring patterns into persistent knowledge, propose a narrow improvement, and apply it only after review or evaluation.
 
