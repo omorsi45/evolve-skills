@@ -1,8 +1,18 @@
+<div align="center">
+
 # Evolve Skills
 
 **Continual learning infrastructure for coding agents, without retraining the model.**
 
 Turns real agent execution traces into persistent knowledge, benchmark-gated skill improvements, and human-reviewed updates.
+
+![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue)
+![Focus](https://img.shields.io/badge/Focus-Agent%20Learning-black)
+
+</div>
+
+---
 
 Instead of treating `SKILL.md` as static configuration, it lets a skill accumulate evidence from real runs, compile recurring patterns into persistent knowledge, propose a narrow improvement, and apply it only after review or evaluation.
 
