@@ -55,7 +55,7 @@ Prefix each command with `node <evolve-skills-dir>/scripts/evolve.mjs` when the 
 - `scan` returns files modified after the source cutoff and no later than its own `scan_started_at`. It never advances checkpoints. Error-free complete scans write a local, per-source receipt; incomplete or partial-history scans cannot produce a checkpoint-eligible receipt.
 - `checkpoint` requires an exact, unconsumed eligible scan receipt with unchanged source roots and prior checkpoint. It validates all selected sources before advancing any; it cannot advance without a qualifying scan or move backward. The operator still must process every candidate before calling it.
 - `raw/MANIFEST.tsv` deduplicates traces by SHA-256 and records byte length, source, outcome, relative file, and ingestion time.
-- `RUNS.tsv` is append-only and records apply, reject, and no-action decisions.
+- `RUNS.tsv` is append-only and records apply, reject, and no-action decisions. New `new_traces` values count unique manifest entries ingested after the prior decision and by the current decision time. Existing rows are preserved even if they used cumulative counts. Invalid manifest ingestion timestamps fail before any decision mutation.
 - Proposal metadata moves from `pending` to `applied` or `rejected` once. A stale live-skill hash blocks apply.
 - `verify` checks schema, mode, target name, trace hashes and byte counts, proposal files, statuses, candidate hashes, and saved patch hashes for new proposals. It reports legacy proposals without patch hashes as unverified; pending legacy patches are reconstructed against the matching live baseline before apply.
 - `raw/traces/`, `raw/digests/`, and `sources.local.json` are ignored by the target's local `evolution/.gitignore`.

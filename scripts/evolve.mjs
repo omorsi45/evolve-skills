@@ -689,13 +689,42 @@ function validateProposalPatch(proposal, baseline) {
   }
 }
 
-function recordDecision(evolution, config, proposal, decision) {
+function prepareDecision(evolution) {
+  const date = new Date().toISOString();
+  const history = dataRows(path.join(evolution, "RUNS.tsv"));
+  let previous = Number.NEGATIVE_INFINITY;
+  if (history.length > 0) {
+    const last = history[history.length - 1].split("\t")[1];
+    previous = Date.parse(last);
+    if (!Number.isFinite(previous)) {
+      throw new Error("invalid evolution decision timestamp in RUNS.tsv");
+    }
+  }
+  const now = Date.parse(date);
+  let newTraces = 0;
+  for (const row of dataRows(path.join(evolution, "raw", "MANIFEST.tsv"))) {
+    const fields = row.split("\t");
+    if (fields.length !== 6) {
+      throw new Error("invalid trace manifest row");
+    }
+    const ingestedAt = Date.parse(fields[5]);
+    if (!Number.isFinite(ingestedAt)) {
+      throw new Error("invalid manifest ingestion timestamp");
+    }
+    if (ingestedAt > previous && ingestedAt <= now) {
+      newTraces += 1;
+    }
+  }
+  return { date, newTraces };
+}
+
+function recordDecision(evolution, config, proposal, decision, prepared) {
   const runsFile = path.join(evolution, "RUNS.tsv");
   const run = String(dataRows(runsFile).length + 1).padStart(4, "0");
-  const date = new Date().toISOString();
+  const { date, newTraces } = prepared;
   appendFileSync(
     runsFile,
-    [run, date, config.mode, proposal.trace_count ?? 0, proposal.id, decision].join("\t") + "\n",
+    [run, date, config.mode, newTraces, proposal.id, decision].join("\t") + "\n",
     "utf8",
   );
   appendFileSync(
@@ -807,6 +836,7 @@ function applyProposal(skillArg, args) {
     throw new Error(`proposal ${proposal.id} candidate hash does not match metadata`);
   }
   validateProposalPatch(proposal, before);
+  const prepared = prepareDecision(evolution);
 
   writeFileSync(liveFile, candidate);
   const updated = {
@@ -817,7 +847,7 @@ function applyProposal(skillArg, args) {
   };
   writeFileSync(proposal.metadataFile, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
   updatePurpose(skillDir, updated);
-  recordDecision(evolution, config, updated, "applied");
+  recordDecision(evolution, config, updated, "applied", prepared);
   process.stdout.write(`${JSON.stringify({ proposal: proposal.id, status: "applied" })}\n`);
 }
 
@@ -834,6 +864,7 @@ function rejectProposal(skillArg, args) {
   }
   validateProposalPatch(proposal);
   const config = JSON.parse(readFileSync(path.join(evolution, "config.json"), "utf8"));
+  const prepared = prepareDecision(evolution);
   const updated = {
     ...proposal.metadata,
     status: "rejected",
@@ -841,7 +872,7 @@ function rejectProposal(skillArg, args) {
     reason,
   };
   writeFileSync(proposal.metadataFile, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
-  recordDecision(evolution, config, updated, "rejected");
+  recordDecision(evolution, config, updated, "rejected", prepared);
   process.stdout.write(`${JSON.stringify({ proposal: proposal.id, status: "rejected" })}\n`);
 }
 
@@ -853,13 +884,14 @@ function noAction(skillArg, args) {
     throw new Error("no-action requires --reason <text>");
   }
   const config = JSON.parse(readFileSync(path.join(evolution, "config.json"), "utf8"));
+  const prepared = prepareDecision(evolution);
   const record = {
     id: "-",
     pattern: "none",
     notes: reason,
     trace_count: dataRows(path.join(evolution, "raw", "MANIFEST.tsv")).length,
   };
-  recordDecision(evolution, config, record, "no_action");
+  recordDecision(evolution, config, record, "no_action", prepared);
   process.stdout.write(`${JSON.stringify({ status: "no_action" })}\n`);
 }
 
