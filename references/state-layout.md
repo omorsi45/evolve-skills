@@ -57,5 +57,5 @@ Prefix each command with `node <evolve-skills-dir>/scripts/evolve.mjs` when the 
 - `raw/MANIFEST.tsv` deduplicates traces by SHA-256 and records byte length, source, outcome, relative file, and ingestion time.
 - `RUNS.tsv` is append-only and records apply, reject, and no-action decisions.
 - Proposal metadata moves from `pending` to `applied` or `rejected` once. A stale live-skill hash blocks apply.
-- `verify` checks schema, mode, target name, trace hashes and byte counts, proposal files, statuses, and candidate hashes.
+- `verify` checks schema, mode, target name, trace hashes and byte counts, proposal files, statuses, candidate hashes, and saved patch hashes for new proposals. It reports legacy proposals without patch hashes as unverified; pending legacy patches are reconstructed against the matching live baseline before apply.
 - `raw/traces/`, `raw/digests/`, and `sources.local.json` are ignored by the target's local `evolution/.gitignore`.
