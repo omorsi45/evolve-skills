@@ -280,6 +280,39 @@ test("scan starts at the last evolution date and advances only after checkpoint"
   );
 });
 
+test("reconfiguring changed roots requires complete history despite later RUNS decision", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const original = path.join(root, "original");
+  const replacement = path.join(root, "replacement");
+  mkdirSync(original);
+  mkdirSync(replacement);
+  const oldTrace = path.join(replacement, "old.jsonl");
+  writeFileSync(oldTrace, '{"session":"historical"}\n');
+  utimesSync(oldTrace, new Date("2026-01-01T00:00:00.000Z"), new Date("2026-01-01T00:00:00.000Z"));
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${original}`).status, 0);
+  const sourceFile = path.join(skill, "evolution/sources.local.json");
+  const state = JSON.parse(readFileSync(sourceFile, "utf8"));
+  state.harnesses.codex.last_scanned_at = "2026-03-01T00:00:00.000Z";
+  writeFileSync(sourceFile, JSON.stringify(state));
+  appendFileSync(path.join(skill, "evolution/RUNS.tsv"),
+    "0001\t2026-03-02T00:00:00.000Z\tobservational\t0\t-\tno_action\n");
+
+  const changed = runCli("configure", skill, "--harness", "codex", "--root", `codex=${replacement}`);
+  assert.equal(changed.status, 0, changed.stderr || changed.stdout);
+  const updated = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex;
+  assert.equal(updated.last_scanned_at, null);
+  assert.equal(updated.requires_full_scan, true);
+  const scan = runCli("scan", skill, "--json");
+  assert.equal(scan.status, 0, scan.stderr || scan.stdout);
+  assert.deepEqual(JSON.parse(scan.stdout).harnesses[0].candidates.map(item => item.path), [oldTrace]);
+
+  const unchanged = runCli("configure", skill, "--harness", "codex", "--root", `codex=${replacement}`);
+  assert.equal(unchanged.status, 0, unchanged.stderr || unchanged.stdout);
+  assert.equal(JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex.requires_full_scan, true);
+});
+
 test("configure persists selected agents and scan explains export-only sources", () => {
   const { root, skill } = makeSkill();
   writeSkill(skill);
