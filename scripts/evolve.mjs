@@ -471,6 +471,9 @@ function checkpointSources(skillArg, args) {
     throw new Error("checkpoint requires --through <scan-started-at>");
   }
   const through = normalizeDate(throughArg, "--through");
+  if (Date.parse(through) > Date.now()) {
+    throw new Error("checkpoint cannot use a future scan timestamp");
+  }
   for (const id of selected) {
     const source = state.harnesses[id];
     if (!source) {
@@ -479,9 +482,20 @@ function checkpointSources(skillArg, args) {
     if (source.last_scanned_at && Date.parse(through) < Date.parse(source.last_scanned_at)) {
       throw new Error(`checkpoint cannot move backward for ${id}`);
     }
+    const receipt = source.scan_receipt;
+    if (!receipt || receipt.scan_started_at !== through || receipt.source_id !== id) {
+      throw new Error(`checkpoint requires the latest eligible scan receipt for ${id}`);
+    }
+    if (receipt.roots_fingerprint !== sha256(JSON.stringify(normalizedRoots(source.roots)))
+      || receipt.prior_checkpoint !== (source.last_scanned_at || null)
+      || receipt.requires_full_scan !== Boolean(source.requires_full_scan)) {
+      throw new Error(`checkpoint scan receipt is stale for ${id}; scan again`);
+    }
   }
   for (const id of selected) {
     state.harnesses[id].last_scanned_at = through;
+    state.harnesses[id].scan_receipt = null;
+    state.harnesses[id].requires_full_scan = false;
   }
   writeSources(evolution, state);
   process.stdout.write(`${JSON.stringify({ skill: skillDir, harnesses: selected, through })}\n`);
