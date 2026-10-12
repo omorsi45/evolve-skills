@@ -313,6 +313,43 @@ test("reconfiguring changed roots requires complete history despite later RUNS d
   assert.equal(JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex.requires_full_scan, true);
 });
 
+test("scan receipts require complete error-free enumeration", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const dir = path.join(root, "sessions");
+  mkdirSync(dir);
+  writeFileSync(path.join(dir, "run.jsonl"), '{"session":1}\n');
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${dir}`).status, 0);
+  const sourceFile = path.join(skill, "evolution/sources.local.json");
+
+  const first = JSON.parse(runCli("scan", skill, "--json").stdout);
+  assert.equal(first.harnesses[0].candidates.length, 1);
+  let sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(sources.codex.scan_receipt.scan_started_at, first.scan_started_at);
+  assert.equal(sources.codex.scan_receipt.source_id, "codex");
+
+  appendFileSync(path.join(skill, "evolution/RUNS.tsv"),
+    "0001\t2026-01-01T00:00:00.000Z\tobservational\t0\t-\tno_action\n");
+  const partial = JSON.parse(runCli("scan", skill, "--since", "2026-09-01T00:00:00Z", "--json").stdout);
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(partial.harnesses[0].checkpoint_eligible, false);
+  assert.equal(sources.codex.scan_receipt, null);
+
+  const missing = path.join(root, "missing");
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${missing}`).status, 0);
+  const failed = JSON.parse(runCli("scan", skill, "--json").stdout);
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(failed.harnesses[0].missing_roots.length, 1);
+  assert.equal(sources.codex.scan_receipt, null);
+
+  assert.equal(runCli("configure", skill, "--harness", "cursor").status, 0);
+  const exportResult = JSON.parse(runCli("scan", skill, "--json").stdout);
+  assert.equal(exportResult.harnesses[0].status, "export_required");
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(sources.cursor.scan_receipt, null);
+});
+
 test("configure persists selected agents and scan explains export-only sources", () => {
   const { root, skill } = makeSkill();
   writeSkill(skill);
