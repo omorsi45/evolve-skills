@@ -50,10 +50,10 @@ Prefix each command with `node <evolve-skills-dir>/scripts/evolve.mjs` when the 
 ## State rules
 
 - `config.json` fixes the mode on first initialization. A later `init` does not silently change it.
-- `sources.local.json` stores the user's selected coding agents, resolved transcript roots, and an independent `last_scanned_at` checkpoint for each agent. It is not shared or committed.
+- `sources.local.json` stores selected agents, resolved transcript roots, independent `last_scanned_at` checkpoints, and local scan receipts. It is not shared or committed. Changed roots clear the old checkpoint and require a full scan.
 - A source with no checkpoint starts at the latest date in `RUNS.tsv`. A new skill with neither value scans all available history once.
-- `scan` returns files modified after the source cutoff and no later than its own `scan_started_at`. It never advances state.
-- `checkpoint` advances only the named sources after their returned candidates were processed successfully. It cannot move a checkpoint backward.
+- `scan` returns files modified after the source cutoff and no later than its own `scan_started_at`. It never advances checkpoints. Error-free complete scans write a local, per-source receipt; incomplete or partial-history scans cannot produce a checkpoint-eligible receipt.
+- `checkpoint` requires an exact, unconsumed eligible scan receipt with unchanged source roots and prior checkpoint. It validates all selected sources before advancing any; it cannot advance without a qualifying scan or move backward. The operator still must process every candidate before calling it.
 - `raw/MANIFEST.tsv` deduplicates traces by SHA-256 and records byte length, source, outcome, relative file, and ingestion time.
 - `RUNS.tsv` is append-only and records apply, reject, and no-action decisions.
 - Proposal metadata moves from `pending` to `applied` or `rejected` once. A stale live-skill hash blocks apply.
