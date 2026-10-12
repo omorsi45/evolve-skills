@@ -18,6 +18,27 @@ import test from "node:test";
 
 const CLI = fileURLToPath(new URL("../scripts/evolve.mjs", import.meta.url));
 
+test("AGENTS.md provides scoped guidance for coding agents", () => {
+  const repository = fileURLToPath(new URL("../", import.meta.url));
+  const expected = {
+    "AGENTS.md": ["npm run check", "Node.js 20", "SKILL.md", "evolution/"],
+    "scripts/AGENTS.md": ["evolve.mjs", "harnesses.mjs", "scan", "checkpoint"],
+    "tests/AGENTS.md": ["node:test", "npm test", "temporary", "regression"],
+    "references/AGENTS.md": ["privacy.md", "state-layout.md", "trace-sources.md"],
+    "docs/superpowers/AGENTS.md": ["specs/", "plans/", "implementation"],
+    ".github/workflows/AGENTS.md": ["ci.yml", "Node 20", "Node 24", "permissions"],
+  };
+  for (const [relative, required] of Object.entries(expected)) {
+    const file = path.join(repository, relative);
+    assert.equal(existsSync(file), true, `missing ${relative}`);
+    const content = readFileSync(file, "utf8");
+    assert.match(content, /^# .+/);
+    for (const term of required) {
+      assert.ok(content.includes(term), `${relative} missing guidance: ${term}`);
+    }
+  }
+});
+
 function makeSkill(name = "demo-skill") {
   const root = mkdtempSync(path.join(tmpdir(), "evolve-skills-test-"));
   const skill = path.join(root, name);
