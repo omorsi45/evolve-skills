@@ -665,6 +665,17 @@ function proposalFiles(evolution, args) {
   return { id, base, metadataFile, candidateFile, metadata };
 }
 
+function validateProposalPatch(proposal) {
+  const patchFile = `${proposal.base}.patch`;
+  if (!existsSync(patchFile)) {
+    throw new Error(`proposal patch missing: ${proposal.id}`);
+  }
+  if (proposal.metadata.patch_sha256 !== undefined
+    && sha256(readFileSync(patchFile)) !== proposal.metadata.patch_sha256) {
+    throw new Error(`proposal patch hash mismatch: ${proposal.id}`);
+  }
+}
+
 function recordDecision(evolution, config, proposal, decision) {
   const runsFile = path.join(evolution, "RUNS.tsv");
   const run = String(dataRows(runsFile).length + 1).padStart(4, "0");
@@ -752,6 +763,7 @@ function propose(skillArg, args) {
     status: "pending",
     before_sha256: sha256(before),
     after_sha256: sha256(after),
+    patch_sha256: sha256(patch),
     trace_count: dataRows(path.join(evolution, "raw", "MANIFEST.tsv")).length,
   };
   writeFileSync(`${base}.candidate.md`, after, "utf8");
@@ -781,6 +793,7 @@ function applyProposal(skillArg, args) {
   if (sha256(candidate) !== proposal.metadata.after_sha256) {
     throw new Error(`proposal ${proposal.id} candidate hash does not match metadata`);
   }
+  validateProposalPatch(proposal);
 
   writeFileSync(liveFile, candidate);
   const updated = {
@@ -806,6 +819,7 @@ function rejectProposal(skillArg, args) {
   if (!reason) {
     throw new Error("reject requires --reason <text>");
   }
+  validateProposalPatch(proposal);
   const config = JSON.parse(readFileSync(path.join(evolution, "config.json"), "utf8"));
   const updated = {
     ...proposal.metadata,
@@ -904,6 +918,7 @@ function verifySkill(skillArg, args) {
     if (!existsSync(`${base}.candidate.md`) || !existsSync(`${base}.patch`)) {
       throw new Error(`proposal files are incomplete: ${id}`);
     }
+    validateProposalPatch({ id, base, metadata });
     const candidate = readFileSync(`${base}.candidate.md`);
     if (sha256(candidate) !== metadata.after_sha256) {
       throw new Error(`proposal candidate hash mismatch: ${id}`);
