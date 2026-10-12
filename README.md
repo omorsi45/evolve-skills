@@ -160,7 +160,7 @@ Evolve Skills converts it into persistent, reviewable knowledge that can improve
 - Deduplicates traces with content-addressed SHA-256 ingestion.
 - Tracks independent checkpoints for each configured coding agent.
 - Preserves accepted, rejected, and `no_action` history.
-- Verifies trace, proposal, and candidate integrity.
+- Verifies trace, proposal, candidate, and patch integrity. Older proposals without patch hashes remain readable and are explicitly reported as having unverified patches.
 - Supports **16 coding-agent harnesses**, including OpenAI Codex, Claude Code, Gemini CLI, GitHub Copilot, Kiro, Cline, Roo Code, Continue, Aider, Cursor, Windsurf, OpenCode, Goose, Amp, and Zed.
 - Has no runtime dependencies beyond Node.js 20+.
 
