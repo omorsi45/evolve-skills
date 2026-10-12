@@ -238,6 +238,10 @@ function listHarnesses(args) {
   }
 }
 
+function normalizedRoots(roots) {
+  return [...new Set(roots.map((root) => path.resolve(root)))].sort();
+}
+
 function configureSources(skillArg, args) {
   const skillDir = assertSkill(skillArg);
   const evolution = assertEvolution(skillDir);
@@ -271,10 +275,14 @@ function configureSources(skillArg, args) {
   for (const id of selected) {
     const definition = harness(id);
     const old = previous.harnesses[id];
+    const selectedRoots = normalizedRoots(roots.has(id) ? roots.get(id) : old?.roots || definition.default_roots);
+    const rootsChanged = Boolean(old) && JSON.stringify(normalizedRoots(old.roots)) !== JSON.stringify(selectedRoots);
     configured[id] = {
-      roots: roots.has(id) ? roots.get(id) : old?.roots || definition.default_roots,
-      last_scanned_at: old?.last_scanned_at || null,
+      roots: selectedRoots,
+      last_scanned_at: rootsChanged ? null : old?.last_scanned_at || null,
       configured_at: old?.configured_at || configuredAt,
+      requires_full_scan: rootsChanged ? true : old?.requires_full_scan || false,
+      scan_receipt: rootsChanged ? null : old?.scan_receipt || null,
     };
   }
   writeSources(evolution, { schema_version: 1, harnesses: configured });
@@ -372,7 +380,7 @@ function scanSources(skillArg, args) {
     const source = state.harnesses[id];
     const since = args.includes("--rescan-all")
       ? null
-      : explicitSince || source.last_scanned_at || lastEvolution;
+      : explicitSince || (source.requires_full_scan ? null : source.last_scanned_at || lastEvolution);
     const cutoffMs = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
     const roots = source.roots.map((root) => path.resolve(root));
     if (roots.length === 0) {
