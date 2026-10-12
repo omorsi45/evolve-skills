@@ -378,16 +378,21 @@ function scanSources(skillArg, args) {
   for (const id of selected) {
     const definition = harness(id);
     const source = state.harnesses[id];
-    const since = args.includes("--rescan-all")
-      ? null
-      : explicitSince || (source.requires_full_scan ? null : source.last_scanned_at || lastEvolution);
+    const defaultSince = source.requires_full_scan ? null : source.last_scanned_at || lastEvolution;
+    const since = args.includes("--rescan-all") ? null : explicitSince || defaultSince;
+    const completeHistory = args.includes("--rescan-all")
+      || (explicitSince === undefined
+        || (defaultSince !== null && Date.parse(explicitSince) <= Date.parse(defaultSince)))
+      && !(source.requires_full_scan && explicitSince !== undefined);
     const cutoffMs = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
-    const roots = source.roots.map((root) => path.resolve(root));
+    const roots = normalizedRoots(source.roots);
     if (roots.length === 0) {
+      source.scan_receipt = null;
       results.push({
         id,
         name: definition.name,
         status: "export_required",
+        checkpoint_eligible: false,
         since,
         roots,
         candidates: [],
@@ -408,10 +413,21 @@ function scanSources(skillArg, args) {
       errors.push(...scanned.errors);
     }
     candidates.sort((left, right) => left.path.localeCompare(right.path));
+    const eligible = completeHistory && missing_roots.length === 0 && errors.length === 0;
+    source.scan_receipt = eligible ? {
+      source_id: id,
+      scan_started_at: scanStartedAt,
+      roots_fingerprint: sha256(JSON.stringify(roots)),
+      prior_checkpoint: source.last_scanned_at || null,
+      requires_full_scan: Boolean(source.requires_full_scan),
+      since,
+      candidate_count: candidates.length,
+    } : null;
     results.push({
       id,
       name: definition.name,
       status: "ready",
+      checkpoint_eligible: eligible,
       since,
       roots,
       candidates,
@@ -419,6 +435,7 @@ function scanSources(skillArg, args) {
       errors,
     });
   }
+  writeSources(evolution, state);
 
   const result = {
     skill: skillDir,
