@@ -729,6 +729,39 @@ test("new proposals reject patch tampering before verification or decisions", ()
   assert.equal(rows.split("\n").filter(line => line && !line.startsWith("#")).length, 0);
 });
 
+test("legacy proposal patches are reported unverified and validated when pending", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const liveFile = path.join(skill, "SKILL.md");
+  const before = readFileSync(liveFile, "utf8");
+  const candidate = path.join(root, "candidate.md");
+  writeFileSync(candidate, before.replace("Original instructions.", "Legacy candidate."));
+  assert.equal(runCli("propose", skill, "--candidate", candidate,
+    "--pattern", "legacy", "--notes", "Test historical proposal records.").status, 0);
+  const base = path.join(skill, "evolution/proposals/0001");
+  const metadata = JSON.parse(readFileSync(`${base}.json`, "utf8"));
+  delete metadata.patch_sha256;
+  writeFileSync(`${base}.json`, JSON.stringify(metadata));
+  const originalPatch = readFileSync(`${base}.patch`, "utf8");
+  const legacy = runCli("verify", skill, "--json");
+  assert.equal(legacy.status, 0, legacy.stderr || legacy.stdout);
+  assert.equal(JSON.parse(legacy.stdout).legacy_unverified_patches, 1);
+
+  writeFileSync(`${base}.patch`, "fake patch\n");
+  const blocked = runCli("apply", skill, "--proposal", "0001", "--approved");
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr, /patch/i);
+  assert.equal(readFileSync(liveFile, "utf8"), before);
+  writeFileSync(`${base}.patch`, originalPatch);
+
+  const applied = runCli("apply", skill, "--proposal", "0001", "--approved");
+  assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+  const historical = runCli("verify", skill, "--json");
+  assert.equal(historical.status, 0, historical.stderr || historical.stdout);
+  assert.equal(JSON.parse(historical.stdout).legacy_unverified_patches, 1);
+});
+
 test("verify detects tampered traces and proposal candidates", () => {
   const { root, skill } = makeSkill();
   writeSkill(skill);
