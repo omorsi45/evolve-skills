@@ -285,6 +285,128 @@ test("scan starts at the last evolution date and advances only after checkpoint"
   );
 });
 
+test("reconfiguring changed roots requires complete history despite later RUNS decision", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const original = path.join(root, "original");
+  const replacement = path.join(root, "replacement");
+  mkdirSync(original);
+  mkdirSync(replacement);
+  const oldTrace = path.join(replacement, "old.jsonl");
+  writeFileSync(oldTrace, '{"session":"historical"}\n');
+  utimesSync(oldTrace, new Date("2026-01-01T00:00:00.000Z"), new Date("2026-01-01T00:00:00.000Z"));
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${original}`).status, 0);
+  const sourceFile = path.join(skill, "evolution/sources.local.json");
+  const state = JSON.parse(readFileSync(sourceFile, "utf8"));
+  state.harnesses.codex.last_scanned_at = "2026-03-01T00:00:00.000Z";
+  writeFileSync(sourceFile, JSON.stringify(state));
+  appendFileSync(path.join(skill, "evolution/RUNS.tsv"),
+    "0001\t2026-03-02T00:00:00.000Z\tobservational\t0\t-\tno_action\n");
+
+  const changed = runCli("configure", skill, "--harness", "codex", "--root", `codex=${replacement}`);
+  assert.equal(changed.status, 0, changed.stderr || changed.stdout);
+  const updated = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex;
+  assert.equal(updated.last_scanned_at, null);
+  assert.equal(updated.requires_full_scan, true);
+  const scan = runCli("scan", skill, "--json");
+  assert.equal(scan.status, 0, scan.stderr || scan.stdout);
+  assert.deepEqual(JSON.parse(scan.stdout).harnesses[0].candidates.map(item => item.path), [oldTrace]);
+
+  const unchanged = runCli("configure", skill, "--harness", "codex", "--root", `codex=${replacement}`);
+  assert.equal(unchanged.status, 0, unchanged.stderr || unchanged.stdout);
+  assert.equal(JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex.requires_full_scan, true);
+});
+
+test("scan receipts require complete error-free enumeration", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const dir = path.join(root, "sessions");
+  mkdirSync(dir);
+  writeFileSync(path.join(dir, "run.jsonl"), '{"session":1}\n');
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${dir}`).status, 0);
+  const sourceFile = path.join(skill, "evolution/sources.local.json");
+
+  const first = JSON.parse(runCli("scan", skill, "--json").stdout);
+  assert.equal(first.harnesses[0].candidates.length, 1);
+  let sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(sources.codex.scan_receipt.scan_started_at, first.scan_started_at);
+  assert.equal(sources.codex.scan_receipt.source_id, "codex");
+
+  appendFileSync(path.join(skill, "evolution/RUNS.tsv"),
+    "0001\t2026-01-01T00:00:00.000Z\tobservational\t0\t-\tno_action\n");
+  const partial = JSON.parse(runCli("scan", skill, "--since", "2026-09-01T00:00:00Z", "--json").stdout);
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(partial.harnesses[0].checkpoint_eligible, false);
+  assert.equal(sources.codex.scan_receipt, null);
+
+  const missing = path.join(root, "missing");
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${missing}`).status, 0);
+  const failed = JSON.parse(runCli("scan", skill, "--json").stdout);
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(failed.harnesses[0].missing_roots.length, 1);
+  assert.equal(sources.codex.scan_receipt, null);
+
+  assert.equal(runCli("configure", skill, "--harness", "cursor").status, 0);
+  const exportResult = JSON.parse(runCli("scan", skill, "--json").stdout);
+  assert.equal(exportResult.harnesses[0].status, "export_required");
+  sources = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses;
+  assert.equal(sources.cursor.scan_receipt, null);
+});
+
+test("checkpoint rejects arbitrary timestamps and consumes exact eligible receipts", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const dir = path.join(root, "sessions");
+  mkdirSync(dir);
+  writeFileSync(path.join(dir, "session.jsonl"), '{"session":"one"}\n');
+  assert.equal(runCli("configure", skill, "--harness", "codex", "--root", `codex=${dir}`).status, 0);
+  const sourceFile = path.join(skill, "evolution/sources.local.json");
+
+  const forged = runCli("checkpoint", skill, "--harness", "codex", "--through", "2099-01-01T00:00:00Z");
+  assert.notEqual(forged.status, 0);
+  assert.match(forged.stderr, /scan|receipt|future/i);
+
+  const scan = JSON.parse(runCli("scan", skill, "--json").stdout);
+  const wrong = runCli("checkpoint", skill, "--harness", "codex", "--through", "2026-01-01T00:00:00Z");
+  assert.notEqual(wrong.status, 0);
+  assert.match(wrong.stderr, /scan|receipt/i);
+  const applied = runCli("checkpoint", skill, "--harness", "codex", "--through", scan.scan_started_at);
+  assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+  const state = JSON.parse(readFileSync(sourceFile, "utf8")).harnesses.codex;
+  assert.equal(state.last_scanned_at, scan.scan_started_at);
+  assert.equal(state.scan_receipt, null);
+
+  const repeated = runCli("checkpoint", skill, "--harness", "codex", "--through", scan.scan_started_at);
+  assert.notEqual(repeated.status, 0);
+  assert.match(repeated.stderr, /scan|receipt/i);
+});
+
+test("checkpoint validates all harnesses before writing any", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const good = path.join(root, "good");
+  mkdirSync(good);
+  writeFileSync(path.join(good, "session.jsonl"), '{"good":true}\n');
+  const missing = path.join(root, "missing");
+  const configured = runCli("configure", skill,
+    "--harness", "codex", "--harness", "kiro",
+    "--root", `codex=${good}`, "--root", `kiro=${missing}`);
+  assert.equal(configured.status, 0, configured.stderr || configured.stdout);
+  const scan = JSON.parse(runCli("scan", skill, "--json").stdout);
+  assert.equal(scan.harnesses.find(item => item.id === "codex").checkpoint_eligible, true);
+  assert.equal(scan.harnesses.find(item => item.id === "kiro").checkpoint_eligible, false);
+  const checkpoint = runCli("checkpoint", skill, "--harness", "codex", "--harness", "kiro",
+    "--through", scan.scan_started_at);
+  assert.notEqual(checkpoint.status, 0);
+  const sources = JSON.parse(readFileSync(path.join(skill, "evolution/sources.local.json"), "utf8")).harnesses;
+  assert.equal(sources.codex.last_scanned_at, null);
+  assert.equal(sources.kiro.last_scanned_at, null);
+});
+
 test("configure persists selected agents and scan explains export-only sources", () => {
   const { root, skill } = makeSkill();
   writeSkill(skill);

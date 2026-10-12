@@ -260,7 +260,7 @@ node scripts/evolve.mjs status /path/to/my-skill
 node scripts/evolve.mjs verify /path/to/my-skill
 ```
 
-Use the exact `scan_started_at` returned by `scan` as the checkpoint, and advance it only after every candidate from that source has been processed successfully.
+Use the exact `scan_started_at` returned by an eligible, error-free `scan` as the checkpoint. The CLI requires the corresponding local scan receipt and rejects arbitrary timestamps, stale source roots, and partial scans. Advance only after every candidate from that source has been processed successfully. Reconfiguring a source to new roots requires a full scan before checkpointing.
 
 Machine-specific transcript paths live in the target skill's ignored `evolution/sources.local.json`. Reusable learned knowledge stays inside its `evolution/` tree.
 

@@ -241,6 +241,10 @@ function listHarnesses(args) {
   }
 }
 
+function normalizedRoots(roots) {
+  return [...new Set(roots.map((root) => path.resolve(root)))].sort();
+}
+
 function configureSources(skillArg, args) {
   const skillDir = assertSkill(skillArg);
   const evolution = assertEvolution(skillDir);
@@ -274,10 +278,14 @@ function configureSources(skillArg, args) {
   for (const id of selected) {
     const definition = harness(id);
     const old = previous.harnesses[id];
+    const selectedRoots = normalizedRoots(roots.has(id) ? roots.get(id) : old?.roots || definition.default_roots);
+    const rootsChanged = Boolean(old) && JSON.stringify(normalizedRoots(old.roots)) !== JSON.stringify(selectedRoots);
     configured[id] = {
-      roots: roots.has(id) ? roots.get(id) : old?.roots || definition.default_roots,
-      last_scanned_at: old?.last_scanned_at || null,
+      roots: selectedRoots,
+      last_scanned_at: rootsChanged ? null : old?.last_scanned_at || null,
       configured_at: old?.configured_at || configuredAt,
+      requires_full_scan: rootsChanged ? true : old?.requires_full_scan || false,
+      scan_receipt: rootsChanged ? null : old?.scan_receipt || null,
     };
   }
   writeSources(evolution, { schema_version: 1, harnesses: configured });
@@ -373,16 +381,21 @@ function scanSources(skillArg, args) {
   for (const id of selected) {
     const definition = harness(id);
     const source = state.harnesses[id];
-    const since = args.includes("--rescan-all")
-      ? null
-      : explicitSince || source.last_scanned_at || lastEvolution;
+    const defaultSince = source.requires_full_scan ? null : source.last_scanned_at || lastEvolution;
+    const since = args.includes("--rescan-all") ? null : explicitSince || defaultSince;
+    const completeHistory = args.includes("--rescan-all")
+      || (explicitSince === undefined
+        || (defaultSince !== null && Date.parse(explicitSince) <= Date.parse(defaultSince)))
+      && !(source.requires_full_scan && explicitSince !== undefined);
     const cutoffMs = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
-    const roots = source.roots.map((root) => path.resolve(root));
+    const roots = normalizedRoots(source.roots);
     if (roots.length === 0) {
+      source.scan_receipt = null;
       results.push({
         id,
         name: definition.name,
         status: "export_required",
+        checkpoint_eligible: false,
         since,
         roots,
         candidates: [],
@@ -403,10 +416,21 @@ function scanSources(skillArg, args) {
       errors.push(...scanned.errors);
     }
     candidates.sort((left, right) => left.path.localeCompare(right.path));
+    const eligible = completeHistory && missing_roots.length === 0 && errors.length === 0;
+    source.scan_receipt = eligible ? {
+      source_id: id,
+      scan_started_at: scanStartedAt,
+      roots_fingerprint: sha256(JSON.stringify(roots)),
+      prior_checkpoint: source.last_scanned_at || null,
+      requires_full_scan: Boolean(source.requires_full_scan),
+      since,
+      candidate_count: candidates.length,
+    } : null;
     results.push({
       id,
       name: definition.name,
       status: "ready",
+      checkpoint_eligible: eligible,
       since,
       roots,
       candidates,
@@ -414,6 +438,7 @@ function scanSources(skillArg, args) {
       errors,
     });
   }
+  writeSources(evolution, state);
 
   const result = {
     skill: skillDir,
@@ -449,6 +474,9 @@ function checkpointSources(skillArg, args) {
     throw new Error("checkpoint requires --through <scan-started-at>");
   }
   const through = normalizeDate(throughArg, "--through");
+  if (Date.parse(through) > Date.now()) {
+    throw new Error("checkpoint cannot use a future scan timestamp");
+  }
   for (const id of selected) {
     const source = state.harnesses[id];
     if (!source) {
@@ -457,9 +485,20 @@ function checkpointSources(skillArg, args) {
     if (source.last_scanned_at && Date.parse(through) < Date.parse(source.last_scanned_at)) {
       throw new Error(`checkpoint cannot move backward for ${id}`);
     }
+    const receipt = source.scan_receipt;
+    if (!receipt || receipt.scan_started_at !== through || receipt.source_id !== id) {
+      throw new Error(`checkpoint requires the latest eligible scan receipt for ${id}`);
+    }
+    if (receipt.roots_fingerprint !== sha256(JSON.stringify(normalizedRoots(source.roots)))
+      || receipt.prior_checkpoint !== (source.last_scanned_at || null)
+      || receipt.requires_full_scan !== Boolean(source.requires_full_scan)) {
+      throw new Error(`checkpoint scan receipt is stale for ${id}; scan again`);
+    }
   }
   for (const id of selected) {
     state.harnesses[id].last_scanned_at = through;
+    state.harnesses[id].scan_receipt = null;
+    state.harnesses[id].requires_full_scan = false;
   }
   writeSources(evolution, state);
   process.stdout.write(`${JSON.stringify({ skill: skillDir, harnesses: selected, through })}\n`);
