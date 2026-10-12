@@ -41,7 +41,7 @@ For each configured agent, `scan` chooses its lower bound in this order:
 
 The upper bound is `scan_started_at`, captured before file enumeration. A candidate must have a modification time strictly after the lower bound and at or before the upper bound. This includes an old session file that was appended after the checkpoint without rereading unchanged older files.
 
-`scan` never changes the checkpoint. After successful processing, call `checkpoint --through <scan_started_at>`. If processing fails, leave the checkpoint unchanged and retry safely. Trace content hashes provide a second deduplication layer.
+`scan` never changes the checkpoint. An error-free scan covering the required history records a local receipt for its source. After successfully processing every candidate, call `checkpoint --through <scan_started_at>` with the timestamp from that eligible scan. A missing root, scan error, newer explicit `--since` cutoff, changed source roots, or stale receipt prevents checkpoint advancement. If processing fails, leave the checkpoint unchanged and retry safely. Trace content hashes provide a second deduplication layer.
 
 ## Match requirements
 
