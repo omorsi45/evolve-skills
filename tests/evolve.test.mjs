@@ -98,17 +98,22 @@ test("init rejects a target whose frontmatter name does not match its directory"
   assert.equal(existsSync(path.join(skill, "evolution")), false);
 });
 
-test("init adds local source state to an existing gitignore without changing CRLF", () => {
+test("init restores every privacy ignore rule without changing existing CRLF", () => {
   const { skill } = makeSkill();
   writeSkill(skill);
   assert.equal(runCli("init", skill).status, 0);
   const ignore = path.join(skill, "evolution/.gitignore");
-  writeFileSync(ignore, "raw/traces/*\r\n", "utf8");
+  writeFileSync(ignore, "custom-rule\r\nraw/traces/*\r\n", "utf8");
 
   const result = runCli("init", skill);
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(readFileSync(ignore, "utf8"), "raw/traces/*\r\nsources.local.json\r\n");
+  const expected = "custom-rule\r\nraw/traces/*\r\nraw/digests/*\r\nsources.local.json\r\n";
+  assert.equal(readFileSync(ignore, "utf8"), expected);
+
+  const repeat = runCli("init", skill);
+  assert.equal(repeat.status, 0, repeat.stderr || repeat.stdout);
+  assert.equal(readFileSync(ignore, "utf8"), expected);
 });
 
 test("ingest stores a trace by content hash and does not duplicate it", () => {
