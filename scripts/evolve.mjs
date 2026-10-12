@@ -665,14 +665,24 @@ function proposalFiles(evolution, args) {
   return { id, base, metadataFile, candidateFile, metadata };
 }
 
-function validateProposalPatch(proposal) {
+function validateProposalPatch(proposal, baseline) {
   const patchFile = `${proposal.base}.patch`;
   if (!existsSync(patchFile)) {
     throw new Error(`proposal patch missing: ${proposal.id}`);
   }
-  if (proposal.metadata.patch_sha256 !== undefined
-    && sha256(readFileSync(patchFile)) !== proposal.metadata.patch_sha256) {
-    throw new Error(`proposal patch hash mismatch: ${proposal.id}`);
+  const patch = readFileSync(patchFile, "utf8");
+  if (proposal.metadata.patch_sha256 !== undefined) {
+    if (sha256(patch) !== proposal.metadata.patch_sha256) {
+      throw new Error(`proposal patch hash mismatch: ${proposal.id}`);
+    }
+    return;
+  }
+  if (baseline !== undefined) {
+    const candidate = readFileSync(proposal.candidateFile, "utf8");
+    const expected = proposalPatch(baseline.toString("utf8"), candidate);
+    if (expected !== patch) {
+      throw new Error(`legacy proposal patch mismatch: ${proposal.id}`);
+    }
   }
 }
 
@@ -793,7 +803,7 @@ function applyProposal(skillArg, args) {
   if (sha256(candidate) !== proposal.metadata.after_sha256) {
     throw new Error(`proposal ${proposal.id} candidate hash does not match metadata`);
   }
-  validateProposalPatch(proposal);
+  validateProposalPatch(proposal, before);
 
   writeFileSync(liveFile, candidate);
   const updated = {
@@ -904,6 +914,7 @@ function verifySkill(skillArg, args) {
   }
 
   let proposalCount = 0;
+  let legacyUnverifiedPatches = 0;
   const proposalsDir = path.join(evolution, "proposals");
   for (const name of readdirSync(proposalsDir).filter((entry) => /^\d{4}\.json$/.test(entry))) {
     const id = name.slice(0, 4);
@@ -919,6 +930,9 @@ function verifySkill(skillArg, args) {
       throw new Error(`proposal files are incomplete: ${id}`);
     }
     validateProposalPatch({ id, base, metadata });
+    if (metadata.patch_sha256 === undefined) {
+      legacyUnverifiedPatches += 1;
+    }
     const candidate = readFileSync(`${base}.candidate.md`);
     if (sha256(candidate) !== metadata.after_sha256) {
       throw new Error(`proposal candidate hash mismatch: ${id}`);
@@ -926,11 +940,17 @@ function verifySkill(skillArg, args) {
     proposalCount += 1;
   }
 
-  const result = { valid: true, skill: skillDir, traces: traceCount, proposals: proposalCount };
+  const result = {
+    valid: true,
+    skill: skillDir,
+    traces: traceCount,
+    proposals: proposalCount,
+    legacy_unverified_patches: legacyUnverifiedPatches,
+  };
   process.stdout.write(
     args.includes("--json")
       ? `${JSON.stringify(result)}\n`
-      : `${path.basename(skillDir)}: valid (${traceCount} traces, ${proposalCount} proposals)\n`,
+      : `${path.basename(skillDir)}: valid (${traceCount} traces, ${proposalCount} proposals, ${legacyUnverifiedPatches} legacy patches unverified)\n`,
   );
 }
 
