@@ -137,7 +137,10 @@ function init(skillArg, args) {
     path.join(evolution, ".gitignore"),
     "raw/traces/*\nraw/digests/*\nsources.local.json\n",
   );
-  ensureLine(path.join(evolution, ".gitignore"), "sources.local.json");
+  const ignoreFile = path.join(evolution, ".gitignore");
+  for (const rule of ["raw/traces/*", "raw/digests/*", "sources.local.json"]) {
+    ensureLine(ignoreFile, rule);
+  }
   writeIfMissing(
     path.join(skillDir, "PURPOSE.md"),
     `# ${path.basename(skillDir)} purpose\n\n## Contract\n\nDescribe what this skill must accomplish, its boundaries, and its non-goals. Evolution proposals should preserve this contract.\n\n## Evolution history\n`,
