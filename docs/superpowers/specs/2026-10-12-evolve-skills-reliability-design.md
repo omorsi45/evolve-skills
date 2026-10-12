@@ -106,7 +106,7 @@ Tests: first decision; two consecutive decisions with no new ingest; a new inges
 
 - Incomplete scans, malformed sources, stale receipts, and root mismatches must produce actionable errors without advancing checkpoints.
 - Corrupted new patch artifacts must block verification and finalization; legacy integrity limitations must be visible.
-- Decisions must not be appended when required manifest data is invalid.
+- Validate manifest timestamps and determine the next decision's trace count before changing the live skill, proposal status, PURPOSE.md, or RUNS.tsv. Invalid history must fail before any of those writes.
 - Scope each phase to its owning files and docs. Use independent PRs in phase order. Base on `main` after preceding phases merge, or clearly mark a stacked dependency.
 - For every phase: failing regression test on baseline, smallest fix, targeted green test, full `npm run check`, Node 20/24 CI, diff review, and code review.
 
