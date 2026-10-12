@@ -699,6 +699,36 @@ test("no-action records an evolution run without creating a proposal", () => {
   );
 });
 
+test("new proposals reject patch tampering before verification or decisions", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const live = path.join(skill, "SKILL.md");
+  const before = readFileSync(live, "utf8");
+  const candidate = path.join(root, "candidate.md");
+  writeFileSync(candidate, before.replace("Original instructions.", "Candidate instructions."));
+  const proposed = runCli("propose", skill, "--candidate", candidate,
+    "--pattern", "patch-integrity", "--notes", "Protect stored review patches.");
+  assert.equal(proposed.status, 0, proposed.stderr || proposed.stdout);
+  const base = path.join(skill, "evolution/proposals/0001");
+  const metadata = JSON.parse(readFileSync(`${base}.json`, "utf8"));
+  assert.match(metadata.patch_sha256, /^[a-f0-9]{64}$/);
+  writeFileSync(`${base}.patch`, "tampered review patch\n");
+  for (const action of [
+    ["verify", skill],
+    ["apply", skill, "--proposal", "0001", "--approved"],
+    ["reject", skill, "--proposal", "0001", "--reason", "Do not trust tampered artifact."],
+  ]) {
+    const result = runCli(...action);
+    assert.notEqual(result.status, 0, `${action[0]} must reject altered patches`);
+    assert.match(result.stderr, /patch.*hash|patch.*mismatch|patch.*tamper/i);
+  }
+  assert.equal(readFileSync(live, "utf8"), before);
+  assert.equal(JSON.parse(readFileSync(`${base}.json`, "utf8")).status, "pending");
+  const rows = readFileSync(path.join(skill, "evolution/RUNS.tsv"), "utf8");
+  assert.equal(rows.split("\n").filter(line => line && !line.startsWith("#")).length, 0);
+});
+
 test("verify detects tampered traces and proposal candidates", () => {
   const { root, skill } = makeSkill();
   writeSkill(skill);
