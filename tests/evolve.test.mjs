@@ -678,6 +678,67 @@ test("reject closes a proposal without changing the live skill", () => {
   assert.match(readFileSync(path.join(skill, "evolution/RUNS.tsv"), "utf8"), /\t0001\trejected/);
 });
 
+test("RUNS new_traces counts new manifest entries since previous decision", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const traceA = path.join(root, "a.jsonl");
+  writeFileSync(traceA, '{"run":"a"}\n');
+  assert.equal(runCli("ingest", skill, "--trace", traceA).status, 0);
+  const decide = (reason) => runCli("no-action", skill, "--reason", reason);
+  assert.equal(decide("first").status, 0);
+  const runsFile = path.join(skill, "evolution/RUNS.tsv");
+  const rows = () => readFileSync(runsFile, "utf8").split("\n").filter(line => line && !line.startsWith("#")).map(line => line.split("\t"));
+  assert.equal(rows()[0][3], "1");
+
+  const manifestFile = path.join(skill, "evolution/raw/MANIFEST.tsv");
+  const manifest = readFileSync(manifestFile, "utf8").split("\n");
+  const row = manifest.find(line => line && !line.startsWith("#"));
+  const pieces = row.split("\t");
+  pieces[5] = rows()[0][1];
+  writeFileSync(manifestFile, manifest.join("\n").replace(row, pieces.join("\t")));
+  assert.equal(decide("second").status, 0);
+  assert.equal(rows()[1][3], "0");
+
+  const traceB = path.join(root, "b.jsonl");
+  writeFileSync(traceB, '{"run":"b"}\n');
+  assert.equal(runCli("ingest", skill, "--trace", traceB).status, 0);
+  const candidate = path.join(root, "candidate.md");
+  writeFileSync(candidate, readFileSync(path.join(skill, "SKILL.md"), "utf8")
+    .replace("Original instructions.", "Proposed change."));
+  assert.equal(runCli("propose", skill, "--candidate", candidate, "--pattern", "fresh-evidence",
+    "--notes", "Check incremental counts.").status, 0);
+  const rejected = runCli("reject", skill, "--proposal", "0001", "--reason", "Not yet.");
+  assert.equal(rejected.status, 0, rejected.stderr || rejected.stdout);
+  assert.equal(rows()[2][3], "1");
+  assert.equal(decide("fourth").status, 0);
+  assert.equal(rows()[3][3], "0");
+});
+
+test("invalid manifest timestamps cannot partially apply or append a decision", () => {
+  const { root, skill } = makeSkill();
+  writeSkill(skill);
+  assert.equal(runCli("init", skill).status, 0);
+  const liveFile = path.join(skill, "SKILL.md");
+  const before = readFileSync(liveFile, "utf8");
+  const candidate = path.join(root, "candidate.md");
+  writeFileSync(candidate, before.replace("Original instructions.", "Updated."));
+  assert.equal(runCli("propose", skill, "--candidate", candidate,
+    "--pattern", "timestamps", "--notes", "Invalid dates must be rejected.").status, 0);
+  appendFileSync(path.join(skill, "evolution/raw/MANIFEST.tsv"),
+    `${"f".repeat(64)}\t5\tmanual\tpass\traw/traces/bad.trace\tbad-date\n`);
+  const apply = runCli("apply", skill, "--proposal", "0001", "--approved");
+  assert.notEqual(apply.status, 0);
+  assert.match(apply.stderr, /timestamp|date|manifest/i);
+  assert.equal(readFileSync(liveFile, "utf8"), before);
+  assert.equal(JSON.parse(readFileSync(path.join(skill, "evolution/proposals/0001.json"), "utf8")).status, "pending");
+  const none = runCli("no-action", skill, "--reason", "invalid manifest");
+  assert.notEqual(none.status, 0);
+  const decisions = readFileSync(path.join(skill, "evolution/RUNS.tsv"), "utf8")
+    .split("\n").filter(line => line && !line.startsWith("#"));
+  assert.equal(decisions.length, 0);
+});
+
 test("no-action records an evolution run without creating a proposal", () => {
   const { skill } = makeSkill();
   writeSkill(skill);
